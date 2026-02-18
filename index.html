@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>予診AIアシスタント（直接録音版）</title>
+    <title>予診AIくん</title>
     <style>
         :root {
             --primary-color: #2c7be5;
@@ -19,31 +19,33 @@
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background-color: var(--bg-color); color: var(--text-main); margin: 0; padding: 20px; display: flex; justify-content: center; }
         .container { width: 100%; max-width: 700px; }
         .card { background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 12px; padding: 30px; box-shadow: 0 0.75rem 1.5rem rgba(18,38,63,.03); }
-
-        h2 { margin: 0 0 20px 0; font-size: 1.25rem; color: var(--primary-color); display: flex; align-items: center; }
+        
+        h2 { margin: 0 0 20px 0; font-size: 1.25rem; color: var(--primary-color); }
         .config-section { margin-bottom: 25px; padding-bottom: 20px; border-bottom: 1px solid var(--border-color); }
         .input-group label { display: block; font-size: 0.8rem; font-weight: 600; text-transform: uppercase; color: var(--text-muted); margin-bottom: 8px; }
         input[type="password"] { width: 100%; padding: 10px; border: 1px solid var(--border-color); border-radius: 8px; box-sizing: border-box; }
 
-        /* 録音コントロール */
         .record-controls { text-align: center; margin-bottom: 30px; }
-        .btn-record { width: 80px; height: 80px; border-radius: 50%; border: none; background: var(--primary-color); color: white; font-size: 1.5rem; cursor: pointer; transition: all 0.2s; position: relative; box-shadow: 0 4px 15px rgba(44, 123, 229, 0.3); }
-        .btn-record.recording { background: var(--danger-color); animation: pulse 1.5s infinite; box-shadow: 0 4px 15px rgba(250, 82, 82, 0.4); }
+        .btn-record { width: 80px; height: 80px; border-radius: 50%; border: none; background: var(--primary-color); color: white; font-size: 1.5rem; cursor: pointer; transition: all 0.2s; box-shadow: 0 4px 15px rgba(44, 123, 229, 0.3); }
+        .btn-record.recording { background: var(--danger-color); animation: pulse 1.5s infinite; }
+        .btn-append { background: var(--success-color); width: 60px; height: 60px; font-size: 1.2rem; display: none; margin: 0 auto; }
+        
         @keyframes pulse { 0% { transform: scale(1); } 50% { transform: scale(1.05); } 100% { transform: scale(1); } }
-
-        .timer { margin-top: 10px; font-weight: bold; font-family: monospace; font-size: 1.2rem; color: var(--text-main); }
-        .instruction { color: var(--text-muted); font-size: 0.9rem; margin-top: 5px; }
+        
+        .timer { margin-top: 10px; font-weight: bold; font-family: monospace; font-size: 1.2rem; }
+        .instruction { color: var(--text-muted); font-size: 0.9rem; margin-top: 10px; min-height: 1.2em; }
 
         .result-box { background: #f8f9fa; border: 1px solid var(--border-color); border-radius: 8px; padding: 20px; min-height: 120px; white-space: pre-wrap; font-size: 0.95rem; line-height: 1.7; margin-top: 10px; }
         .copy-btn { background: var(--success-color); color: white; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 0.8rem; }
         .status { margin: 15px 0; text-align: center; color: var(--primary-color); font-weight: 500; height: 1.2em; }
+        .reset-link { color: var(--text-muted); font-size: 0.75rem; text-decoration: underline; cursor: pointer; margin-top: 30px; display: block; text-align: center; }
     </style>
 </head>
 <body>
 
 <div class="container">
     <div class="card">
-        <h2>予診AIくん（直接録音）</h2>
+        <h2>予診AIくん</h2>
 
         <div class="config-section">
             <div class="input-group">
@@ -63,15 +65,17 @@
         <div style="margin-top: 20px;">
             <div style="display:flex; justify-content:space-between; align-items:center;">
                 <span style="font-size:0.8rem; font-weight:600; color:var(--text-muted);">整形結果</span>
-                <button class="copy-btn" onclick="copyText()" id="copyBtn">結果をコピー</button>
+                <button class="copy-btn" onclick="copyText()" id="copyBtn">コピー</button>
             </div>
-            <div id="resultText" class="result-box">録音を完了するとここに整形結果が表示されます。</div>
+            <div id="resultText" class="result-box">ここに整形結果が表示されます。</div>
         </div>
 
         <details style="margin-top:20px; color:var(--text-muted); font-size:0.8rem;">
-            <summary>文字起こし原文を確認</summary>
-            <div id="transcriptionText" style="margin-top:10px;">なし</div>
+            <summary>これまでの会話ログを確認</summary>
+            <div id="transcriptionText" style="margin-top:10px; white-space: pre-wrap;">なし</div>
         </details>
+
+        <span class="reset-link" onclick="resetAll()">全てのデータを消去して新規開始</span>
     </div>
 </div>
 
@@ -79,8 +83,10 @@
 <script>
     let mediaRecorder;
     let audioChunks = [];
+    let fullTranscription = ""; // これまでの全会話テキスト
     let startTime;
     let timerInterval;
+    let localStream;
 
     function saveKey() { localStorage.setItem('openai_api_key', document.getElementById('apiKey').value); }
     window.onload = () => {
@@ -93,31 +99,29 @@
         const inst = document.getElementById('instruction');
 
         if (mediaRecorder && mediaRecorder.state === "recording") {
-            // 録音停止
             mediaRecorder.stop();
+            if (localStream) {
+                localStream.getTracks().forEach(track => track.stop());
+            }
             btn.classList.remove('recording');
-            btn.innerText = "🎤";
+            btn.innerText = "⏳";
             inst.innerText = "解析中...";
             clearInterval(timerInterval);
         } else {
-            // 録音開始
             try {
-                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                mediaRecorder = new MediaRecorder(stream);
+                localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                mediaRecorder = new MediaRecorder(localStream);
                 audioChunks = [];
-
                 mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
                 mediaRecorder.onstop = processAudio;
-
                 mediaRecorder.start();
                 btn.classList.add('recording');
                 btn.innerText = "■";
-                inst.innerText = "録音中... (もう一度押して完了)";
-
+                inst.innerText = "録音中...";
                 startTime = Date.now();
                 timerInterval = setInterval(updateTimer, 1000);
             } catch (err) {
-                alert("マイクの使用が許可されていないか、見つかりません。");
+                alert("マイクを起動できません。GitHub PagesのURL（https〜）で開いているか確認してください。");
             }
         }
     }
@@ -133,6 +137,9 @@
         const apiKey = document.getElementById('apiKey').value;
         const status = document.getElementById('statusMessage');
         const resultDiv = document.getElementById('resultText');
+        const btn = document.getElementById('recordBtn');
+        const inst = document.getElementById('instruction');
+        const transDiv = document.getElementById('transcriptionText');
 
         if (!apiKey) return alert("APIキーを入力してください");
 
@@ -142,10 +149,9 @@
         formData.append('model', 'whisper-1');
         formData.append('language', 'ja');
 
-        status.innerText = "⏳ 音声をテキストに変換中...";
+        status.innerText = "⏳ 解析中...";
 
         try {
-            // 1. Whisper API
             const wRes = await fetch('https://api.openai.com/v1/audio/transcriptions', {
                 method: 'POST',
                 headers: { 'Authorization': `Bearer ${apiKey}` },
@@ -153,35 +159,57 @@
             });
             const wData = await wRes.json();
             if (wData.error) throw new Error(wData.error.message);
-            document.getElementById('transcriptionText').innerText = wData.text;
 
-            // 2. GPT-4o-mini
-            status.innerText = "✍️ カルテ形式に整形中...";
+            // 今回のテキストを追加
+            fullTranscription += (fullTranscription ? "\n(追加の話): " : "") + wData.text;
+            transDiv.innerText = fullTranscription;
+
             const gRes = await fetch('https://api.openai.com/v1/chat/completions', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
                 body: JSON.stringify({
                     model: "gpt-4o-mini",
-                    messages: [{ role: "system", content: SYSTEM_PROMPT }, { role: "user", content: wData.text }],
+                    messages: [
+                        { role: "system", content: SYSTEM_PROMPT },
+                        { role: "user", content: "以下の会話内容からカルテを整形してください。追加の話がある場合は、それを含めて全体を最新状態に更新してください：\n\n" + fullTranscription }
+                    ],
                     temperature: 0
                 })
             });
             const gData = await gRes.json();
             resultDiv.innerText = "S）\n" + gData.choices[0].message.content;
-            status.innerText = "✅ 完了しました";
-            document.getElementById('instruction').innerText = "ボタンを押して録音開始";
+            
+            status.innerText = "✅ 完了";
+            btn.innerText = "＋"; 
+            btn.style.backgroundColor = "var(--success-color)";
+            inst.innerHTML = "続きがあれば<b>[ ＋ ]</b>で追加録音、<br>次の方は下の<b>[ リセット ]</b>";
         } catch (err) {
-            status.innerText = "❌ エラーが発生しました";
+            status.innerText = "❌ エラー";
             alert(err.message);
+            btn.innerText = "🎤";
+            btn.style.backgroundColor = "var(--primary-color)";
         }
+    }
+
+    function resetAll() {
+        if(!confirm("会話データをリセットして新しい診察を開始しますか？")) return;
+        fullTranscription = "";
+        document.getElementById('resultText').innerText = "ここに整形結果が表示されます。";
+        document.getElementById('transcriptionText').innerText = "なし";
+        document.getElementById('statusMessage').innerText = "";
+        const btn = document.getElementById('recordBtn');
+        btn.innerText = "🎤";
+        btn.style.backgroundColor = "var(--primary-color)";
+        document.getElementById('instruction').innerText = "ボタンを押して録音開始";
+        document.getElementById('timer').innerText = "00:00";
     }
 
     function copyText() {
         const text = document.getElementById('resultText').innerText;
         navigator.clipboard.writeText(text).then(() => {
             const btn = document.getElementById('copyBtn');
-            btn.innerText = "コピー完了";
-            setTimeout(() => btn.innerText = "結果をコピー", 2000);
+            btn.innerText = "OK";
+            setTimeout(() => btn.innerText = "コピー", 2000);
         });
     }
 </script>
