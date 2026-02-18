@@ -25,20 +25,48 @@
         .input-group label { display: block; font-size: 0.8rem; font-weight: 600; text-transform: uppercase; color: var(--text-muted); margin-bottom: 8px; }
         input[type="password"] { width: 100%; padding: 10px; border: 1px solid var(--border-color); border-radius: 8px; box-sizing: border-box; }
 
-        .record-controls { text-align: center; margin-bottom: 30px; }
+        /* ボタン配置の調整 */
+        .record-controls { 
+            display: flex; 
+            flex-direction: column; 
+            align-items: center; 
+            margin-bottom: 30px; 
+            position: relative;
+        }
+        .button-row {
+            display: flex;
+            align-items: center;
+            gap: 20px; /* ボタン同士の隙間 */
+        }
+        
         .btn-record { width: 80px; height: 80px; border-radius: 50%; border: none; background: var(--primary-color); color: white; font-size: 1.5rem; cursor: pointer; transition: all 0.2s; box-shadow: 0 4px 15px rgba(44, 123, 229, 0.3); }
         .btn-record.recording { background: var(--danger-color); animation: pulse 1.5s infinite; }
-        .btn-append { background: var(--success-color); width: 60px; height: 60px; font-size: 1.2rem; display: none; margin: 0 auto; }
         
+        /* リセットボタンのスタイル */
+        .btn-reset-small { 
+            width: 45px; 
+            height: 45px; 
+            border-radius: 50%; 
+            border: 1px solid var(--border-color); 
+            background: #fff; 
+            color: var(--text-muted); 
+            font-size: 1.2rem; 
+            cursor: pointer; 
+            display: flex; 
+            align-items: center; 
+            justify-content: center;
+            transition: all 0.2s;
+        }
+        .btn-reset-small:hover { background: #fef1f1; color: var(--danger-color); border-color: var(--danger-color); }
+
         @keyframes pulse { 0% { transform: scale(1); } 50% { transform: scale(1.05); } 100% { transform: scale(1); } }
         
         .timer { margin-top: 10px; font-weight: bold; font-family: monospace; font-size: 1.2rem; }
-        .instruction { color: var(--text-muted); font-size: 0.9rem; margin-top: 10px; min-height: 1.2em; }
+        .instruction { color: var(--text-muted); font-size: 0.85rem; margin-top: 10px; min-height: 2.4em; line-height: 1.4; }
 
         .result-box { background: #f8f9fa; border: 1px solid var(--border-color); border-radius: 8px; padding: 20px; min-height: 120px; white-space: pre-wrap; font-size: 0.95rem; line-height: 1.7; margin-top: 10px; }
         .copy-btn { background: var(--success-color); color: white; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 0.8rem; }
         .status { margin: 15px 0; text-align: center; color: var(--primary-color); font-weight: 500; height: 1.2em; }
-        .reset-link { color: var(--text-muted); font-size: 0.75rem; text-decoration: underline; cursor: pointer; margin-top: 30px; display: block; text-align: center; }
     </style>
 </head>
 <body>
@@ -55,7 +83,14 @@
         </div>
 
         <div class="record-controls">
-            <button id="recordBtn" class="btn-record" onclick="toggleRecording()">🎤</button>
+            <div class="button-row">
+                <div style="width:45px"></div> 
+                
+                <button id="recordBtn" class="btn-record" onclick="toggleRecording()">🎤</button>
+                
+                <button class="btn-reset-small" onclick="resetAll()" title="リセット">🗑️</button>
+            </div>
+            
             <div id="timer" class="timer">00:00</div>
             <p id="instruction" class="instruction">ボタンを押して録音開始</p>
         </div>
@@ -74,8 +109,6 @@
             <summary>これまでの会話ログを確認</summary>
             <div id="transcriptionText" style="margin-top:10px; white-space: pre-wrap;">なし</div>
         </details>
-
-        <span class="reset-link" onclick="resetAll()">全てのデータを消去して新規開始</span>
     </div>
 </div>
 
@@ -83,7 +116,7 @@
 <script>
     let mediaRecorder;
     let audioChunks = [];
-    let fullTranscription = ""; // これまでの全会話テキスト
+    let fullTranscription = "";
     let startTime;
     let timerInterval;
     let localStream;
@@ -121,7 +154,7 @@
                 startTime = Date.now();
                 timerInterval = setInterval(updateTimer, 1000);
             } catch (err) {
-                alert("マイクを起動できません。GitHub PagesのURL（https〜）で開いているか確認してください。");
+                alert("マイクを起動できません。");
             }
         }
     }
@@ -160,8 +193,7 @@
             const wData = await wRes.json();
             if (wData.error) throw new Error(wData.error.message);
 
-            // 今回のテキストを追加
-            fullTranscription += (fullTranscription ? "\n(追加の話): " : "") + wData.text;
+            fullTranscription += (fullTranscription ? "\n(追加): " : "") + wData.text;
             transDiv.innerText = fullTranscription;
 
             const gRes = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -182,7 +214,7 @@
             status.innerText = "✅ 完了";
             btn.innerText = "＋"; 
             btn.style.backgroundColor = "var(--success-color)";
-            inst.innerHTML = "続きがあれば<b>[ ＋ ]</b>で追加録音、<br>次の方は下の<b>[ リセット ]</b>";
+            inst.innerHTML = "続きがあれば <b>[ ＋ ]</b> をクリック<br>次の方は右の <b>[ 🗑️ ]</b> でリセット";
         } catch (err) {
             status.innerText = "❌ エラー";
             alert(err.message);
@@ -192,7 +224,7 @@
     }
 
     function resetAll() {
-        if(!confirm("会話データをリセットして新しい診察を開始しますか？")) return;
+        if(!confirm("データをリセットしますか？")) return;
         fullTranscription = "";
         document.getElementById('resultText').innerText = "ここに整形結果が表示されます。";
         document.getElementById('transcriptionText').innerText = "なし";
