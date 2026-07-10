@@ -179,9 +179,9 @@
         const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
         const formData = new FormData();
         formData.append('file', audioBlob, 'audio.webm');
-        formData.append('model', 'whisper-1');
+        formData.append('model', 'gpt-4o-mini-transcribe');
         formData.append('language', 'ja');
-
+        formData.append('temperature', '0');
         status.innerText = "⏳ 解析中...";
 
         try {
